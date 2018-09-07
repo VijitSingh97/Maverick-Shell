@@ -43,6 +43,8 @@
 
 #define MAX_HISTORY 15 // Mav shell will only store history of last 10 entries
 
+int status;
+
 struct cmd
 {
   char *token[MAX_NUM_ARGUMENTS];
@@ -84,12 +86,18 @@ static void handle_signal ( int sig )
 
   switch( sig )
   {
+    pid_t pid;
     case SIGINT: 
       //printf("Caught a SIGINT\n");
     break;
 
     case SIGTSTP: 
       //printf("Caught a SIGTSTP\n");
+    break;
+
+    case SIGCHLD:
+      pid = waitpid(-1, &status, WNOHANG);
+      printf("%d\n", pid);
     break;
 
     default: 
@@ -129,6 +137,12 @@ int main()
   }
 
   if (sigaction(SIGTSTP , &act, NULL) < 0) 
+  {
+    perror ("sigaction: ");
+    return 1;
+  }
+
+  if (sigaction(SIGCHLD , &act, NULL) < 0)
   {
     perror ("sigaction: ");
     return 1;
@@ -191,6 +205,12 @@ int main()
       {
         chdir( token[1] );
       }
+      else if ( strcmp(token[0], "bg" ) == 0 )
+      {
+        int status;
+        pid_t changed = waitpid(0, &status, WNOHANG);
+        printf("%d\n",changed);
+      }
       else if( (strcmp(token[0], "exit") == 0 ) ||  (strcmp(token[0], "quit") == 0 ) )
       {
         printf("exit\n");
@@ -216,39 +236,40 @@ int main()
           // record so we can kill or get history
 
           // start process in order of folders
-          char *path = concat_str( "/usr/local/bin/", token[0] );
+          char *path = concat_str( "./", token[0] );
           ssize_t err = execv( path, token );
           // check if process is sucessfully running. If not
           // look for executable in next directory
           if ( err < 0 )
           {
-            char *path = concat_str( "/usr/bin/", token[0] );
+            char *path = concat_str( "/usr/local/bin/", token[0] );
             ssize_t err = execv( path, token );
+            // check if process is sucessfully running. If not
+            // look for executable in next directory
             if ( err < 0 )
             {
-              char *path = concat_str( "/bin/", token[0] );
+              char *path = concat_str( "/usr/bin/", token[0] );
               ssize_t err = execv( path, token );
               if ( err < 0 )
               {
-                printf("%s: Command not found.\n\n", token[0]);
-                kill(getpid(),6);
+                char *path = concat_str( "/bin/", token[0] );
+                ssize_t err = execv( path, token );
+                if ( err < 0 )
+                {
+                  printf("%s: Command not found.\n\n", token[0]);
+                  kill(getpid(),6);
+                }
               }
             }
           }
-
           free( path );
           fflush(NULL);
         }
         else
         {
-          // When fork() returns a positive number, we are in the parent
-          // process and the return value is the PID of the newly created
-          // child process.
-          int status;
-
           // Force the parent process to wait until the child process 
           // exits
-          pid_t completed = wait(&status);
+          pause();
           //printf("Hello from the parent process\n\tPID: %d\n\tPPID: %d\n", getpid(),getppid());
           fflush( NULL );
         }

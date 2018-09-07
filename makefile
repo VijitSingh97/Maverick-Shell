@@ -1,5 +1,5 @@
-mfs: mfs.c
+mfs: mfs.c loop.c
 	gcc -o msh mfs.c
-	./msh
+	gcc -o loop loop.c
 clean:
 	rm msh
