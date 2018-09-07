@@ -37,10 +37,104 @@
 
 #define MAX_COMMAND_SIZE 255    // The maximum command-line size
 
-#define MAX_NUM_ARGUMENTS 5     // Mav shell only supports five arguments
+// MY CODE STARTS HERE
+
+#define MAX_NUM_ARGUMENTS 10     // Mav shell only supports five arguments
+
+#define MAX_HISTORY 15 // Mav shell will only store history of last 10 entries
+
+struct cmd
+{
+  char *token[MAX_NUM_ARGUMENTS];
+  pid_t pid; 
+};
+
+struct cmd history[MAX_HISTORY];
+int counter = 0;
+
+int first_null( char *array[MAX_NUM_ARGUMENTS] )
+{
+  int first_null = 0;
+  for(int i = 0; i < MAX_NUM_ARGUMENTS; i++)
+  {
+    if( array[i] == NULL )
+    {
+      break;
+    }
+    first_null++;
+  }
+  return first_null;
+}
+
+char * concat_str( char * str1, char * str2 )
+{
+  // +1 is added for null space
+  char *final = malloc( strlen(str1) + strlen(str2) + 1);
+  strcpy( final, str1 );
+  strcat( final, str2 );
+  return final;
+}
+
+static void handle_signal ( int sig )
+{
+    /*
+   Determine which of the two signals were caught and 
+   print an appropriate message.
+  */
+
+  switch( sig )
+  {
+    case SIGINT: 
+      //printf("Caught a SIGINT\n");
+    break;
+
+    case SIGTSTP: 
+      //printf("Caught a SIGTSTP\n");
+    break;
+
+    default: 
+      printf("Unable to determine the signal\n");
+    break;
+
+  }
+}
+
+// MY CODE ENDS HERE
 
 int main()
 {
+  // MY CODE STARTS HERE
+  // SET UP SIGNALS
+
+  struct sigaction act;
+ 
+  /*
+    Zero out the sigaction struct
+  */ 
+  memset (&act, '\0', sizeof(act));
+ 
+  /*
+    Set the handler to use the function handle_signal()
+  */ 
+  act.sa_handler = &handle_signal;
+ 
+  /* 
+    Install the handler for SIGINT and SIGTSTP and check the 
+    return value.
+  */ 
+  if (sigaction(SIGINT , &act, NULL) < 0) 
+  {
+    perror ("sigaction: ");
+    return 1;
+  }
+
+  if (sigaction(SIGTSTP , &act, NULL) < 0) 
+  {
+    perror ("sigaction: ");
+    return 1;
+  }
+
+  // MY CODE ENDS HERE
 
   char * cmd_str = (char*) malloc( MAX_COMMAND_SIZE );
 
@@ -85,13 +179,89 @@ int main()
     }
 
     // Now print the tokenized input as a debug check
-    // \TODO Remove this code and replace with your shell functionality
+    // MY CODE STARTS HERE
+
+    // if there are token then the program should not try to change
+    // directories or execute any program
+    if( first_null(token) != 0 )
+    {
+      // check whether the inputed string is cd, because if
+      // the command is cd we do not need fork.
+      if( strcmp(token[0], "cd" ) == 0 )
+      {
+        chdir( token[1] );
+      }
+      else if( (strcmp(token[0], "exit") == 0 ) ||  (strcmp(token[0], "quit") == 0 ) )
+      {
+        printf("exit\n");
+        return 0;
+      }
+      // for every other command we need to call, we need to fork
+      // this is because it is an independed process that we are
+      // are calling
+      else
+      {
+        pid_t pid = fork();
+
+        if( pid == -1 )
+        {
+          // When fork() returns -1, an error happened.
+          perror("fork failed: ");
+        }
+
+        // When fork() returns 0, we are in the child process.
+        // in child we exec the user input
+        else if ( pid == 0 )
+        {
+          // record so we can kill or get history
+
+          // start process in order of folders
+          char *path = concat_str( "/usr/local/bin/", token[0] );
+          ssize_t err = execv( path, token );
+          // check if process is sucessfully running. If not
+          // look for executable in next directory
+          if ( err < 0 )
+          {
+            char *path = concat_str( "/usr/bin/", token[0] );
+            ssize_t err = execv( path, token );
+            if ( err < 0 )
+            {
+              char *path = concat_str( "/bin/", token[0] );
+              ssize_t err = execv( path, token );
+              if ( err < 0 )
+              {
+                printf("%s: Command not found.\n\n", token[0]);
+                kill(getpid(),6);
+              }
+            }
+          }
+
+          free( path );
+          fflush(NULL);
+        }
+        else
+        {
+          // When fork() returns a positive number, we are in the parent
+          // process and the return value is the PID of the newly created
+          // child process.
+          int status;
+
+          // Force the parent process to wait until the child process 
+          // exits
+          pid_t completed = wait(&status);
+          //printf("Hello from the parent process\n\tPID: %d\n\tPPID: %d\n", getpid(),getppid());
+          fflush( NULL );
+        }
+      }
+    }
+
+    // MY CODE ENDS HERE
 
     int token_index  = 0;
-    for( token_index = 0; token_index < token_count; token_index ++ ) 
+    /*for( token_index = 0; token_index < token_count; token_index ++ ) 
     {
       printf("token[%d] = %s\n", token_index, token[token_index] );  
-    }
+    }*/
 
     free( working_root );
 
